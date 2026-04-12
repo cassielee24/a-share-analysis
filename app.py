@@ -3,228 +3,168 @@ import pandas as pd
 import plotly.express as px
 import numpy as np
 
-# Page Configuration
+# ==================== PAGE CONFIG ====================
 st.set_page_config(
-    page_title="A-Share Multi-Dimensional Analysis",
+    page_title="A-Share Industry Analysis",
     page_icon="📊",
     layout="wide"
 )
 
-st.title("📊 A-Share Multi-Dimensional Industry Analysis")
+st.title("📊 A-Share Industry Valuation & Profitability Dashboard")
 st.markdown("""
-This dashboard provides comprehensive analysis across **Valuation**, **Profitability**, **Growth**, and **Risk** dimensions.
+This interactive tool analyzes Chinese A-share industries across key dimensions:  
+**Valuation (PE, PB)** and **Profitability (ROE, ROA)**.
 """)
 
 # ==================== SIDEBAR ====================
-st.sidebar.header("🎛️ Analysis Controls")
+st.sidebar.header("🎛️ Filters & View")
 
-# Dimension Selection
-analysis_dimension = st.sidebar.selectbox(
-    "Primary Dimension",
-    ["Valuation vs Profitability", "Growth vs Valuation", "Risk vs Return", "Size vs Profitability"]
+# 视图选择（简化：只保留两个最核心视图）
+view_mode = st.sidebar.radio(
+    "Select View",
+    ["PE vs ROE (Valuation & Profitability)", "PB vs ROA (Asset Efficiency)"]
 )
 
-# Filters
 st.sidebar.markdown("---")
 st.sidebar.subheader("📊 Data Filters")
 
-min_roe = st.sidebar.slider("Minimum ROE (%)", 0.0, 50.0, 5.0, 0.5)
-max_pe = st.sidebar.slider("Maximum PE Ratio", 0, 200, 100, 5)
-min_companies = st.sidebar.slider("Min Companies per Industry", 1, 20, 5)
+min_roe = st.sidebar.slider("Minimum ROE (%)", -20.0, 50.0, 0.0, 0.5)
+max_pe = st.sidebar.slider("Maximum PE Ratio", 0, 300, 150, 5)
+min_companies = st.sidebar.slider("Min Companies per Industry", 1, 15, 3)
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("*Data: WRDS Compustat Global*")
-st.sidebar.markdown("*ACC102 Assignment*")
+st.sidebar.markdown("*ACC102 Mini Assignment*")
 
 # ==================== DATA LOADING ====================
 @st.cache_data
 def load_data():
     df = pd.read_csv('a_share_final.csv')
-    # Add derived metrics
-    df['PB'] = df['market_cap'] / df['ceq']  # Price to Book (proxy)
-    df['ROA'] = df['ibc'] / (df['ceq'] * 1.5) * 100  # Approximate ROA
-    df['Net Margin'] = df['ibc'] / (df['market_cap'] / df['pe']) * 100  # Approximate
+    
+    # 单位统一：市值转百万元，ceq已是百万元
+    df['market_cap_mil'] = df['market_cap'] / 1e6
+    
+    # 计算 PB（市净率）
+    df['PB'] = df['market_cap_mil'] / df['ceq']
+    
+    # 计算 ROA（总资产收益率）—— 粗略估计：总资产 ≈ 权益 × 2
+    df['ROA'] = df['ibc'] / (df['ceq'] * 2) * 100
+    
+    # 过滤异常 PB
+    df = df[(df['PB'] > 0) & (df['PB'] < 50)]
+    
     return df
 
 df = load_data()
 
-# Filter
+# 应用用户筛选
 df_filtered = df[(df['roe'] >= min_roe) & (df['pe'] <= max_pe)]
 
-# Industry Aggregation
+# 按行业聚合
 industry_stats = df_filtered.groupby('sich').agg({
     'roe': 'median',
     'pe': 'median',
     'PB': 'median',
     'ROA': 'median',
-    'Net Margin': 'median',
     'conm': 'count',
     'market_cap': 'sum'
 }).rename(columns={'conm': 'Company Count', 'market_cap': 'Total Market Cap'}).reset_index()
 
 industry_stats = industry_stats[industry_stats['Company Count'] >= min_companies]
 
-# Derived metrics
+# 添加辅助指标
 industry_stats['PEG Proxy'] = industry_stats['pe'] / industry_stats['roe']
-industry_stats['Risk Proxy'] = 1 / industry_stats['roe']  # Inverse ROE as simple risk proxy
 industry_stats['Log Market Cap'] = np.log10(industry_stats['Total Market Cap'])
 
 # ==================== KPI CARDS ====================
-st.markdown("### 📈 Key Metrics Overview")
-col1, col2, col3, col4, col5, col6 = st.columns(6)
+st.markdown("### 📈 Market Snapshot")
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.metric("Companies", f"{len(df_filtered):,}")
+    st.metric("Companies Analyzed", f"{len(df_filtered):,}")
 with col2:
-    st.metric("Industries", len(industry_stats))
+    st.metric("Industries Covered", len(industry_stats))
 with col3:
     st.metric("Median ROE", f"{df_filtered['roe'].median():.1f}%")
 with col4:
     st.metric("Median PE", f"{df_filtered['pe'].median():.1f}")
-with col5:
-    st.metric("Median PB", f"{df_filtered['PB'].median():.2f}")
-with col6:
-    st.metric("Total Market Cap", f"¥{industry_stats['Total Market Cap'].sum()/1e12:.2f}T")
 
+# ==================== MAIN CHART ====================
 st.markdown("---")
+st.subheader(f"📊 {view_mode}")
 
-# ==================== MAIN VISUALIZATION ====================
-st.subheader(f"📊 {analysis_dimension}")
+# 根据视图设置坐标轴
+if view_mode == "PE vs ROE (Valuation & Profitability)":
+    x_axis, y_axis = 'pe', 'roe'
+    x_label, y_label = 'P/E Ratio (Median)', 'ROE % (Median)'
+    color_by, color_label = 'PEG Proxy', 'PE/ROE'
+    hover_cols = ['sich', 'pe', 'roe', 'PB', 'Company Count']
+else:
+    x_axis, y_axis = 'PB', 'ROA'
+    x_label, y_label = 'P/B Ratio (Median)', 'ROA % (Median)'
+    color_by, color_label = 'roe', 'ROE %'
+    hover_cols = ['sich', 'PB', 'ROA', 'roe', 'Company Count']
 
-col_left, col_right = st.columns([3, 1])
+fig = px.scatter(
+    industry_stats,
+    x=x_axis,
+    y=y_axis,
+    size='Company Count',
+    color=color_by,
+    color_continuous_scale='RdYlGn_r' if view_mode == "PE vs ROE (Valuation & Profitability)" else 'Blues',
+    hover_data=hover_cols,
+    labels={
+        x_axis: x_label,
+        y_axis: y_label,
+        color_by: color_label,
+        'Company Count': 'Number of Companies'
+    },
+    height=550
+)
 
-with col_left:
-    if analysis_dimension == "Valuation vs Profitability":
-        x_axis = 'pe'
-        y_axis = 'roe'
-        x_label = 'P/E Ratio (Median)'
-        y_label = 'ROE % (Median)'
-        color_by = 'PEG Proxy'
-        color_label = 'PE/ROE'
-        
-    elif analysis_dimension == "Growth vs Valuation":
-        x_axis = 'pe'
-        y_axis = 'ROA'
-        x_label = 'P/E Ratio (Median)'
-        y_label = 'ROA % (Median)'
-        color_by = 'Company Count'
-        color_label = 'Companies'
-        
-    elif analysis_dimension == "Risk vs Return":
-        x_axis = 'Risk Proxy'
-        y_axis = 'roe'
-        x_label = 'Risk Proxy (1/ROE)'
-        y_label = 'ROE % (Median)'
-        color_by = 'PB'
-        color_label = 'P/B Ratio'
-        
-    else:  # Size vs Profitability
-        x_axis = 'Log Market Cap'
-        y_axis = 'roe'
-        x_label = 'Log10(Market Cap)'
-        y_label = 'ROE % (Median)'
-        color_by = 'pe'
-        color_label = 'P/E Ratio'
+# 添加参考线
+if view_mode == "PE vs ROE (Valuation & Profitability)":
+    fig.add_hline(y=10, line_dash="dash", line_color="green", annotation_text="ROE=10%")
+    fig.add_vline(x=30, line_dash="dash", line_color="red", annotation_text="PE=30")
 
-    fig = px.scatter(
-        industry_stats,
-        x=x_axis,
-        y=y_axis,
-        size='Company Count',
-        color=color_by,
-        color_continuous_scale='RdYlGn_r' if color_by == 'PEG Proxy' else 'Viridis',
-        hover_data={
-            'sich': True,
-            'pe': ':.2f',
-            'roe': ':.2f',
-            'PB': ':.2f',
-            'ROA': ':.2f',
-            'Company Count': True,
-            'Total Market Cap': ':,.0f'
-        },
-        labels={
-            x_axis: x_label,
-            y_axis: y_label,
-            color_by: color_label,
-            'Company Count': 'Number of Companies'
-        },
-        height=550
-    )
-    
-    fig.update_layout(
-        template="plotly_white",
-        hovermode='closest',
-        coloraxis_colorbar=dict(title=color_label)
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
+fig.update_layout(
+    template="plotly_white",
+    hovermode='closest',
+    coloraxis_colorbar=dict(title=color_label)
+)
 
-with col_right:
-    st.markdown("#### 📌 Legend")
-    st.markdown(f"""
-    **Current View:** {analysis_dimension}
-    
-    **X-Axis:** {x_label}
-    **Y-Axis:** {y_label}
-    **Color:** {color_label}
-    **Size:** Number of Companies
-    
-    ---
-    **Top Performers:**
-    """)
-    
-    top_n = industry_stats.nlargest(3, y_axis)[['sich', y_axis, x_axis]]
-    for _, row in top_n.iterrows():
-        st.metric(
-            f"Industry {int(row['sich'])}",
-            f"{row[y_axis]:.1f}",
-            delta=f"{x_label}: {row[x_axis]:.2f}"
-        )
+st.plotly_chart(fig, use_container_width=True)
 
+# ==================== DATA TABLE ====================
 st.markdown("---")
+st.subheader("📋 Industry Metrics Table")
 
-# ==================== MULTI-DIMENSIONAL TABLE ====================
-st.subheader("📋 Multi-Dimensional Industry Analysis")
-
-col1, col2 = st.columns([2, 1])
-
-with col1:
-    sort_col = st.selectbox(
-        "Sort by metric:",
-        ['roe', 'pe', 'PB', 'ROA', 'Net Margin', 'Company Count', 'Total Market Cap', 'PEG Proxy']
-    )
-
-with col2:
-    st.markdown("<br>", unsafe_allow_html=True)
-    show_all = st.checkbox("Show all columns", value=False)
-
-display_cols = ['sich', 'roe', 'pe', 'PB', 'ROA', 'Net Margin', 'Company Count', 'Total Market Cap', 'PEG Proxy']
-if not show_all:
-    display_cols = ['sich', 'roe', 'pe', 'PB', 'Company Count', 'PEG Proxy']
+sort_col = st.selectbox(
+    "Sort by:",
+    ['roe', 'pe', 'PB', 'ROA', 'Company Count', 'Total Market Cap']
+)
 
 st.dataframe(
-    industry_stats[display_cols].sort_values(sort_col, ascending=False)
+    industry_stats[['sich', 'roe', 'pe', 'PB', 'ROA', 'Company Count', 'Total Market Cap']]
+    .sort_values(sort_col, ascending=False)
     .style.format({
         'roe': '{:.2f}',
         'pe': '{:.2f}',
         'PB': '{:.2f}',
         'ROA': '{:.2f}',
-        'Net Margin': '{:.2f}',
-        'PEG Proxy': '{:.2f}',
         'Total Market Cap': '{:,.0f}'
     })
-    .background_gradient(subset=['roe', 'ROA', 'Net Margin'], cmap='Greens')
-    .background_gradient(subset=['pe', 'PB', 'PEG Proxy'], cmap='Reds_r'),
+    .background_gradient(subset=['roe', 'ROA'], cmap='Greens')
+    .background_gradient(subset=['pe', 'PB'], cmap='Reds_r'),
     use_container_width=True,
     height=400
 )
 
+# ==================== SIMPLE CORRELATION ====================
 st.markdown("---")
+st.subheader("📈 Correlation Heatmap")
 
-# ==================== CORRELATION HEATMAP ====================
-st.subheader("🔥 Metric Correlations")
-
-corr_cols = ['roe', 'pe', 'PB', 'ROA', 'Net Margin', 'Company Count', 'PEG Proxy']
+corr_cols = ['roe', 'pe', 'PB', 'ROA']
 corr_matrix = industry_stats[corr_cols].corr()
 
 fig_corr = px.imshow(
@@ -232,9 +172,9 @@ fig_corr = px.imshow(
     text_auto='.2f',
     color_continuous_scale='RdBu_r',
     range_color=[-1, 1],
-    title='Correlation Matrix of Key Metrics'
+    title='Correlation Among Key Metrics'
 )
-fig_corr.update_layout(height=450)
+fig_corr.update_layout(height=400)
 st.plotly_chart(fig_corr, use_container_width=True)
 
 st.markdown("---")
