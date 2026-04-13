@@ -205,4 +205,3 @@ with tab3:
 
 # ==================== FOOTER ====================
 st.markdown("---")
-st.caption("⚠️ **Disclaimer:** This analysis is for educational purposes only (ACC102 Mini Assignment). Not financial advice.")
