@@ -29,7 +29,6 @@ view_mode = st.sidebar.radio(
 st.sidebar.markdown("---")
 st.sidebar.subheader("📊 Data Filters")
 
-# 提供默认值，方便重置
 min_roe = st.sidebar.slider("Minimum ROE (%)", -20.0, 50.0, 0.0, 0.5)
 max_pe = st.sidebar.slider("Maximum PE Ratio", 0, 300, 150, 5)
 min_companies = st.sidebar.slider("Min Companies per Industry", 1, 15, 3)
@@ -40,13 +39,13 @@ st.sidebar.info("*Data: WRDS Compustat Global*\n\n*ACC102 Mini Assignment*")
 # ==================== DATA LOADING ====================
 @st.cache_data
 def load_data():
-    # 增加文件存在性检查，避免红屏崩溃
+   
     if not os.path.exists('a_share_final.csv'):
         return pd.DataFrame()
         
     df = pd.read_csv('a_share_final.csv')
     
-    # 确保关键列存在
+   
     required_cols = ['market_cap', 'ceq', 'ibc', 'roe', 'pe', 'sich']
     if not all(col in df.columns for col in required_cols):
         st.error("Missing required columns in the dataset.")
@@ -54,7 +53,7 @@ def load_data():
 
     df['market_cap_mil'] = df['market_cap'] / 1e6
     
-    # 使用 numpy 避免分母为 0 导致的报错
+   
     df['PB'] = np.where(df['ceq'] != 0, df['market_cap_mil'] / df['ceq'], np.nan)
     df['ROA'] = np.where(df['ceq'] != 0, (df['ibc'] / (df['ceq'] * 2)) * 100, np.nan)
     
@@ -63,7 +62,7 @@ def load_data():
 
 df = load_data()
 
-# 检查数据是否加载成功
+
 if df.empty:
     st.error("⚠️ Error: 'a_share_final.csv' not found or is empty. Please ensure the data file is in the same directory.")
     st.stop()
@@ -76,20 +75,18 @@ industry_stats = df_filtered.groupby('sich').agg({
     'pe': 'median',
     'PB': 'median',
     'ROA': 'median',
-    'sich': 'count',  # 使用 sich 计数替代 conm 以防 conm 列缺失
+    'sich': 'count', 
     'market_cap': 'sum'
 }).rename(columns={'sich': 'Company Count', 'market_cap': 'Total Market Cap'}).reset_index()
 
 industry_stats = industry_stats[industry_stats['Company Count'] >= min_companies]
 
-# 衍生指标（安全除法）
 if not industry_stats.empty:
     industry_stats['PEG Proxy'] = np.where(
         industry_stats['roe'] > 0, 
         industry_stats['pe'] / industry_stats['roe'], 
         np.nan
     )
-    # 处理 log 可能遇到的 0 或负数
     industry_stats['Log Market Cap'] = np.where(
         industry_stats['Total Market Cap'] > 0,
         np.log10(industry_stats['Total Market Cap']),
@@ -107,7 +104,6 @@ col4.metric("Median PE", f"{df_filtered['pe'].median():.1f}" if not df_filtered.
 st.markdown("---")
 
 # ==================== TABS LAYOUT ====================
-# 使用 Tabs 优化页面布局，避免垂直方向过长
 tab1, tab2, tab3 = st.tabs(["📊 Scatter Analysis", "📋 Data Table", "📈 Heatmap"])
 
 # -------- TAB 1: Main Chart --------
@@ -133,7 +129,7 @@ with tab1:
             size='Company Count',
             color=color_by,
             color_continuous_scale=color_scale,
-            hover_name='sich', # 悬停时显示行业代码作为标题
+            hover_name='sich', 
             hover_data={'sich': False, 'pe': ':.2f', 'roe': ':.2f', 'PB': ':.2f', 'ROA': ':.2f', 'Company Count': True},
             labels={
                 x_axis: x_label,
@@ -144,7 +140,6 @@ with tab1:
             height=600
         )
         
-        # 添加参考线
         if view_mode == "PE vs ROE (Valuation & Profitability)":
             fig.add_hline(y=10, line_dash="dash", line_color="green", annotation_text="Target ROE=10%")
             fig.add_vline(x=30, line_dash="dash", line_color="red", annotation_text="High PE=30")
