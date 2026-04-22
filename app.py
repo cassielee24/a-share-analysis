@@ -143,7 +143,13 @@ with tab1:
         if view_mode == "PE vs ROE (Valuation & Profitability)":
             fig.add_hline(y=10, line_dash="dash", line_color="green", annotation_text="Target ROE=10%")
             fig.add_vline(x=30, line_dash="dash", line_color="red", annotation_text="High PE=30")
-            
+
+# 添加趋势线
+        fig.add_traces(
+            px.scatter(
+                industry_stats, x='pe', y='roe', trendline='ols'
+            ).data[1]
+        ) 
         fig.update_layout(
             template="plotly_white", 
             hovermode='closest', 
@@ -197,6 +203,27 @@ with tab3:
         st.plotly_chart(fig_corr, use_container_width=True)
     else:
         st.info("Not enough industries to compute correlation matrix. Please relax filters.")
+# --- New Charts Added for Enhanced Analysis ---
+
+st.markdown("---")
+st.subheader("🥧 Top 10 Industries by Total Market Cap")
+
+if not industry_stats.empty:
+    # Get the top 10 industries by total market cap
+    top10_mcap = industry_stats.nlargest(10, 'Total Market Cap')[['sich', 'Total Market Cap']]
+    top10_mcap['sich'] = top10_mcap['sich'].astype(int).astype(str)
+
+    fig_pie = px.pie(
+        top10_mcap,
+        values='Total Market Cap',
+        names='sich',
+        title='Top 10 Industries by Total Market Cap (RMB)',
+        hole=0.3
+    )
+    fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+    st.plotly_chart(fig_pie, use_container_width=True)
+else:
+    st.info("No industry data available to display pie chart.")
 
 # ==================== FOOTER ====================
 st.markdown("---")
